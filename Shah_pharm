@@ -1,0 +1,137 @@
+-- ============================================
+-- SHAH PHARMACY - SECURE CLOUD DATABASE
+-- Supabase PostgreSQL + RLS
+-- ============================================
+
+-- 1. Profiles table
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  username text unique,
+  full_name text,
+  role text not null default 'staff'
+    check (role in ('admin', 'staff')),
+  created_at timestamptz not null default now()
+);
+
+-- 2. Pharmacy application data
+create table if not exists public.app_state (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  data jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+-- ============================================
+-- 3. Automatically create profile after signup
+-- ============================================
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.profiles (
+    id,
+    username,
+    full_name,
+    role
+  )
+  values (
+    new.id,
+    coalesce(
+      new.raw_user_meta_data->>'username',
+      split_part(new.email, '@', 1)
+    ),
+    coalesce(
+      new.raw_user_meta_data->>'full_name',
+      ''
+    ),
+    'staff'
+  )
+  on conflict (id) do nothing;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+
+create trigger on_auth_user_created
+after insert on auth.users
+for each row
+execute function public.handle_new_user();
+
+-- ============================================
+-- 4. Enable Row Level Security
+-- ============================================
+
+alter table public.profiles enable row level security;
+alter table public.app_state enable row level security;
+
+-- ============================================
+-- 5. Profiles security
+-- User can ONLY read their own profile
+-- ============================================
+
+drop policy if exists "Users can view own profile"
+on public.profiles;
+
+create policy "Users can view own profile"
+on public.profiles
+for select
+to authenticated
+using (auth.uid() = id);
+
+-- ============================================
+-- 6. App data security
+-- Each user can ONLY access their own pharmacy data
+-- ============================================
+
+drop policy if exists "Users can view own app data"
+on public.app_state;
+
+create policy "Users can view own app data"
+on public.app_state
+for select
+to authenticated
+using (auth.uid() = user_id);
+
+drop policy if exists "Users can insert own app data"
+on public.app_state;
+
+create policy "Users can insert own app data"
+on public.app_state
+for insert
+to authenticated
+with check (auth.uid() = user_id);
+
+drop policy if exists "Users can update own app data"
+on public.app_state;
+
+create policy "Users can update own app data"
+on public.app_state
+for update
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+drop policy if exists "Users can delete own app data"
+on public.app_state;
+
+create policy "Users can delete own app data"
+on public.app_state
+for delete
+to authenticated
+using (auth.uid() = user_id);
+
+-- ============================================
+-- 7. Helpful index
+-- ============================================
+
+create index if not exists idx_app_state_updated_at
+on public.app_state(updated_at);
+
+-- ============================================
+-- DONE
+-- ============================================
