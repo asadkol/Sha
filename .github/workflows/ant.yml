@@ -1,0 +1,72 @@
+from pathlib import Path
+
+workflow = """name: Build Shah Pharmacy APK
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Find and extract Shah Pharmacy Android project
+        shell: bash
+        run: |
+          set -e
+          ZIP="$(ls -t Shah_Pharmacy_Android*.zip 2>/dev/null | head -n 1 || true)"
+          if [ -z "$ZIP" ]; then
+            echo "ERROR: Shah_Pharmacy_Android*.zip not found in repository root."
+            exit 1
+          fi
+          echo "Using: $ZIP"
+          rm -rf Shah_Pharmacy_Android
+          unzip -q "$ZIP"
+          test -f Shah_Pharmacy_Android/settings.gradle
+          test -f Shah_Pharmacy_Android/app/build.gradle
+          echo "Project extracted successfully."
+          find Shah_Pharmacy_Android -maxdepth 2 -type f | sort
+
+      - name: Install Gradle 8.9
+        shell: bash
+        run: |
+          set -e
+          curl -L --fail --retry 3 \
+            -o /tmp/gradle.zip \
+            https://services.gradle.org/distributions/gradle-8.9-bin.zip
+          unzip -q /tmp/gradle.zip -d /tmp
+          /tmp/gradle-8.9/bin/gradle --version
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          set -e
+          /tmp/gradle-8.9/bin/gradle \
+            -p Shah_Pharmacy_Android \
+            clean assembleDebug \
+            --no-daemon --stacktrace
+          test -f Shah_Pharmacy_Android/app/build/outputs/apk/debug/app-debug.apk
+          ls -lh Shah_Pharmacy_Android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Shah-Pharmacy-APK
+          path: Shah_Pharmacy_Android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+"""
+
+path = Path("/mnt/data/shah-pharmacy-build-FIXED.yml")
+path.write_text(workflow, encoding="utf-8")
+print(f"Created: {path}")
+print("This workflow avoids setup-gradle's repository scan and verifies the APK exists before uploading.")
