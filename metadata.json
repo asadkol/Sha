@@ -1,0 +1,6 @@
+{
+  "name": "Shah Pharmacy",
+  "description": "Comprehensive pharmacy management and accounting system for Shah Pharmacy, featuring purchase tracking, daily sales, expense management, inventory alerts, and financial reporting.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
