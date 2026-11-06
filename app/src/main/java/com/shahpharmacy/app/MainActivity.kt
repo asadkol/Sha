@@ -90,7 +90,8 @@ class MainActivity : ComponentActivity() {
                                             viewModel.addPurchase(name, company, qty, purchase, sale, date, batch, expiry)
                                         },
                                         onDeletePurchase = { viewModel.deletePurchase(it) },
-                                        onImportCsv = { viewModel.importPurchasesCsv(it) }
+                                        onImportCsv = { viewModel.importPurchasesCsv(it) },
+                                        onImportExcelRows = { viewModel.importParsedPurchaseOrders(it) }
                                     )
                                     AppScreen.SALE -> SaleScreen(
                                         state = state,
@@ -110,11 +111,15 @@ class MainActivity : ComponentActivity() {
                                     )
                                     AppScreen.STOCK -> StockScreen(
                                         state = state,
-                                        onNavigateBack = { viewModel.navigateTo(AppScreen.DASHBOARD) }
+                                        onNavigateBack = { viewModel.navigateTo(AppScreen.DASHBOARD) },
+                                        onSetLowStockThreshold = { viewModel.setLowStockThreshold(it) },
+                                        onImportExcelPurchaseOrder = { viewModel.importParsedPurchaseOrders(it) },
+                                        onNavigateToPurchase = { viewModel.navigateTo(AppScreen.PURCHASE) }
                                     )
                                     AppScreen.REPORTS -> ReportsScreen(
                                         state = state,
-                                        onNavigateBack = { viewModel.navigateTo(AppScreen.DASHBOARD) }
+                                        onNavigateBack = { viewModel.navigateTo(AppScreen.DASHBOARD) },
+                                        onSeedSampleSales = { viewModel.seedSampleMonthlySales() }
                                     )
                                     AppScreen.CASH -> CashScreen(
                                         state = state,

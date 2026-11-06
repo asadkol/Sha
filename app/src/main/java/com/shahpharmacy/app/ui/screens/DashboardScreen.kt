@@ -218,6 +218,31 @@ fun DashboardScreen(
                                 )
                             }
                         }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { onNavigate(AppScreen.STOCK) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(38.dp),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("Review All Alerts", fontSize = 11.sp)
+                            }
+                            Button(
+                                onClick = { onNavigate(AppScreen.STOCK) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(38.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = NavyPrimary)
+                            ) {
+                                Text("🖨️ Reorder / Print", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
             }

@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.shahpharmacy.app.data.model.FinancialTotals
 import com.shahpharmacy.app.ui.PharmacyUiState
+import com.shahpharmacy.app.ui.components.DailySalesRechartsReport
 import com.shahpharmacy.app.ui.components.HeroBanner
 import com.shahpharmacy.app.ui.components.NoticeBanner
 import com.shahpharmacy.app.ui.components.formatMoney
@@ -26,17 +27,19 @@ import com.shahpharmacy.app.ui.theme.*
 @Composable
 fun ReportsScreen(
     state: PharmacyUiState,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onSeedSampleSales: (() -> Unit)? = null
 ) {
     BackHandler { onNavigateBack() }
 
-    var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Weekly (7 Days)", "Monthly (This Month)", "All-Time")
+    var selectedTab by remember { mutableIntStateOf(1) } // Default to Monthly for trends
+    val tabs = listOf("Weekly", "Monthly", "All-Time", "📈 Trends (Recharts)")
 
     val currentTotals: FinancialTotals = when (selectedTab) {
         0 -> state.weeklyTotals
         1 -> state.monthlyTotals
-        else -> state.allTimeTotals
+        2 -> state.allTimeTotals
+        else -> state.monthlyTotals
     }
 
     LazyColumn(
@@ -187,14 +190,25 @@ fun ReportsScreen(
             }
         }
 
-        // Multi-period comparison table
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                border = CardDefaults.outlinedCardBorder()
-            ) {
+        // Daily Sales Recharts Trend Component (for Monthly and Trends tabs)
+        if (selectedTab == 1 || selectedTab == 3) {
+            item {
+                DailySalesRechartsReport(
+                    sales = state.appData.sales,
+                    onAddSampleSales = onSeedSampleSales
+                )
+            }
+        }
+
+        // Multi-period comparison table (when not exclusively viewing Trends tab)
+        if (selectedTab != 3) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    border = CardDefaults.outlinedCardBorder()
+                ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -234,6 +248,7 @@ fun ReportsScreen(
                 }
             }
         }
+    }
 
         item {
             NoticeBanner(

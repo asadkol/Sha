@@ -20,6 +20,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.shahpharmacy.app.ui.PharmacyUiState
+import com.shahpharmacy.app.ui.components.DailySalesRechartsReport
 import com.shahpharmacy.app.ui.components.HeroBanner
 import com.shahpharmacy.app.ui.components.NoticeBanner
 import com.shahpharmacy.app.ui.components.formatMoney
@@ -142,6 +143,13 @@ fun SaleScreen(
                     }
                 }
             }
+        }
+
+        // Daily Sales Trends Recharts Visualizer
+        item {
+            DailySalesRechartsReport(
+                sales = state.appData.sales
+            )
         }
 
         // Daily Sales List

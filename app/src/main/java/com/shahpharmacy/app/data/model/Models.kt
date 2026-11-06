@@ -66,7 +66,12 @@ data class StockItem(
     val sale: Double,
     val purchaseValue: Double,
     val saleValue: Double,
-    val isLowStock: Boolean
+    val isLowStock: Boolean,
+    val isOutOfStock: Boolean = qty <= 0,
+    val isCritical: Boolean = qty in 1..2,
+    val isExpiringSoon: Boolean = false,
+    val expiryDate: String = "",
+    val batchNumber: String = ""
 )
 
 data class InventoryAlert(

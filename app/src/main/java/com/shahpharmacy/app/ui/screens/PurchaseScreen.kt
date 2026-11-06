@@ -27,7 +27,11 @@ import com.shahpharmacy.app.data.model.AppScreen
 import com.shahpharmacy.app.ui.PharmacyUiState
 import com.shahpharmacy.app.ui.components.HeroBanner
 import com.shahpharmacy.app.ui.components.formatMoney
+import com.shahpharmacy.app.ui.components.ExcelPurchaseImportDialog
+import com.shahpharmacy.app.ui.components.ThermalReceiptDialog
 import com.shahpharmacy.app.ui.theme.*
+import com.shahpharmacy.app.util.ParsedPurchaseOrderRow
+import com.shahpharmacy.app.util.ThermalPrinterHelper
 import java.time.LocalDate
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -37,7 +41,8 @@ fun PurchaseScreen(
     onNavigateBack: () -> Unit,
     onAddPurchase: (name: String, company: String, qty: Int, purchase: Double, sale: Double, date: String, batch: String, expiry: String) -> Unit,
     onDeletePurchase: (id: String) -> Unit,
-    onImportCsv: (csvText: String) -> Unit
+    onImportCsv: (csvText: String) -> Unit,
+    onImportExcelRows: (List<ParsedPurchaseOrderRow>) -> Unit = {}
 ) {
     BackHandler { onNavigateBack() }
 
@@ -50,8 +55,8 @@ fun PurchaseScreen(
     var batch by remember { mutableStateOf("") }
     var expiry by remember { mutableStateOf("") }
     var searchQuery by remember { mutableStateOf("") }
-    var showImportDialog by remember { mutableStateOf(false) }
-    var importCsvText by remember { mutableStateOf("") }
+    var showExcelImportDialog by remember { mutableStateOf(false) }
+    var selectedThermalPurchase by remember { mutableStateOf<com.shahpharmacy.app.data.model.Purchase?>(null) }
 
     val filteredPurchases = remember(state.appData.purchases, searchQuery) {
         if (searchQuery.isBlank()) {
@@ -269,16 +274,15 @@ fun PurchaseScreen(
                             Text("Save Purchase", fontWeight = FontWeight.Bold)
                         }
 
-                        OutlinedButton(
-                            onClick = { showImportDialog = true },
+                        Button(
+                            onClick = { showExcelImportDialog = true },
                             modifier = Modifier
                                 .height(46.dp)
-                                .testTag("import_csv_button"),
-                            shape = RoundedCornerShape(10.dp)
+                                .testTag("import_excel_button"),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = BlueSecondary)
                         ) {
-                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Import CSV")
+                            Text("📊 Upload Excel / CSV", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -385,11 +389,22 @@ fun PurchaseScreen(
                             }
                         }
 
-                        IconButton(
-                            onClick = { onDeletePurchase(item.id) },
-                            modifier = Modifier.testTag("delete_purchase_${item.id}")
-                        ) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = RedExpense)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = { selectedThermalPurchase = item },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Text("🖨️", fontSize = 16.sp)
+                            }
+
+                            IconButton(
+                                onClick = { onDeletePurchase(item.id) },
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .testTag("delete_purchase_${item.id}")
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = RedExpense)
+                            }
                         }
                     }
                 }
@@ -397,47 +412,24 @@ fun PurchaseScreen(
         }
     }
 
-    if (showImportDialog) {
-        AlertDialog(
-            onDismissRequest = { showImportDialog = false },
-            title = { Text("Import Purchases from CSV") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        "Paste CSV rows with headers: name, company, qty, purchase, sale, date, batch, expiry",
-                        fontSize = 12.sp,
-                        color = TextMuted
-                    )
+    // Thermal Receipt Dialog
+    selectedThermalPurchase?.let { purchaseItem ->
+        val receiptText = remember(purchaseItem) {
+            ThermalPrinterHelper.generatePurchaseReceipt(purchaseItem)
+        }
+        ThermalReceiptDialog(
+            receiptText = receiptText,
+            title = "Purchase Voucher - ${purchaseItem.name}",
+            onDismiss = { selectedThermalPurchase = null }
+        )
+    }
 
-                    OutlinedTextField(
-                        value = importCsvText,
-                        onValueChange = { importCsvText = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(180.dp)
-                            .testTag("csv_input_text"),
-                        placeholder = {
-                            Text("name,company,qty,purchase,sale,date\nPanadol 500mg,GSK,100,20,25,2026-09-01\nBrufen 400mg,Abbott,50,45,60,2026-09-02")
-                        }
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onImportCsv(importCsvText)
-                        showImportDialog = false
-                        importCsvText = ""
-                    },
-                    modifier = Modifier.testTag("confirm_import_csv")
-                ) {
-                    Text("Import")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showImportDialog = false }) {
-                    Text("Cancel")
-                }
+    // Excel Purchase Order Upload Dialog
+    if (showExcelImportDialog) {
+        ExcelPurchaseImportDialog(
+            onDismiss = { showExcelImportDialog = false },
+            onConfirmImport = { rows ->
+                onImportExcelRows(rows)
             }
         )
     }

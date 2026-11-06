@@ -39,6 +39,7 @@ data class PharmacyUiState(
     val totalStockSaleValue: Double = 0.0,
     val potentialGrossMargin: Double = 0.0,
     val allUsers: List<UserAccount> = emptyList(),
+    val lowStockThreshold: Int = 5,
     val statusMessage: String? = null,
     val errorMessage: String? = null
 )
@@ -50,6 +51,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
     private val _currentScreen = MutableStateFlow(AppScreen.DASHBOARD)
     val currentScreen: StateFlow<AppScreen> = _currentScreen.asStateFlow()
 
+    private val _lowStockThreshold = MutableStateFlow(5)
+    val lowStockThreshold: StateFlow<Int> = _lowStockThreshold.asStateFlow()
+
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
 
@@ -60,10 +64,11 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         repository.appData,
         repository.currentUser,
         repository.authData,
-        _currentScreen
-    ) { appData, currentUser, authData, screen ->
-        val stock = calculateStock(appData.purchases)
-        val alerts = calculateAlerts(appData.purchases)
+        _currentScreen,
+        _lowStockThreshold
+    ) { appData, currentUser, authData, screen, threshold ->
+        val stock = calculateStock(appData.purchases, threshold)
+        val alerts = calculateAlerts(appData.purchases, threshold)
 
         val today = LocalDate.now().toString()
         val weekAgo = LocalDate.now().minusDays(6).toString()
@@ -103,6 +108,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             totalStockSaleValue = stockSaleVal,
             potentialGrossMargin = margin,
             allUsers = authData.users,
+            lowStockThreshold = threshold,
             statusMessage = _statusMessage.value,
             errorMessage = _errorMessage.value
         )
@@ -275,6 +281,23 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun seedSampleMonthlySales() {
+        clearMessages()
+        viewModelScope.launch {
+            val currentYearMonth = java.time.YearMonth.now()
+            val monthPrefix = currentYearMonth.format(DateTimeFormatter.ofPattern("yyyy-MM"))
+            val daysInMonth = currentYearMonth.lengthOfMonth()
+            val baseAmounts = listOf(24000.0, 31500.0, 28000.0, 34500.0, 41000.0, 37500.0, 45000.0, 32000.0, 29000.0, 36000.0)
+            for (day in 1..daysInMonth) {
+                val dateStr = String.format(java.util.Locale.US, "%s-%02d", monthPrefix, day)
+                val variation = ((day * 950) % 7000).toDouble()
+                val amount = baseAmounts[(day - 1) % baseAmounts.size] + variation
+                repository.saveSale(dateStr, amount)
+            }
+            _statusMessage.value = "Generated daily sales records for $monthPrefix."
+        }
+    }
+
     fun addExpense(date: String, category: String, amount: Double, note: String) {
         clearMessages()
         if (amount <= 0) {
@@ -336,12 +359,45 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun setLowStockThreshold(newThreshold: Int) {
+        _lowStockThreshold.value = newThreshold.coerceIn(1, 100)
+        _statusMessage.value = "Low stock alert threshold set to $newThreshold units."
+    }
+
+    fun importParsedPurchaseOrders(rows: List<com.shahpharmacy.app.util.ParsedPurchaseOrderRow>) {
+        clearMessages()
+        if (rows.isEmpty()) {
+            _errorMessage.value = "No purchase items found to import."
+            return
+        }
+        viewModelScope.launch {
+            var successCount = 0
+            rows.forEach { row ->
+                val p = Purchase(
+                    name = row.name.trim(),
+                    company = row.company.trim(),
+                    qty = row.qty.coerceAtLeast(1),
+                    purchase = row.purchasePrice,
+                    sale = row.salePrice,
+                    date = row.date.ifBlank { LocalDate.now().toString() },
+                    batch = row.batch.trim(),
+                    expiry = row.expiry.trim()
+                )
+                val res = repository.addPurchase(p)
+                if (res.isSuccess) successCount++
+            }
+            _statusMessage.value = "Successfully imported $successCount purchase order item(s)."
+        }
+    }
+
     suspend fun getExportJson(): String {
         return repository.exportJson()
     }
 
-    private fun calculateStock(purchases: List<Purchase>): List<StockItem> {
+    private fun calculateStock(purchases: List<Purchase>, threshold: Int): List<StockItem> {
         val map = linkedMapOf<String, MutableStock>()
+        val today = LocalDate.now()
+
         purchases.forEach { p ->
             val key = p.name.trim().lowercase()
             if (key.isNotEmpty()) {
@@ -351,7 +407,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                         company = p.company.trim(),
                         qty = 0,
                         purchase = p.purchase,
-                        sale = p.sale
+                        sale = p.sale,
+                        latestBatch = p.batch,
+                        latestExpiry = p.expiry
                     )
                 }
                 entry.qty += p.qty
@@ -360,9 +418,22 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 if (entry.company.isEmpty() && p.company.isNotEmpty()) {
                     entry.company = p.company.trim()
                 }
+                if (p.batch.isNotEmpty()) entry.latestBatch = p.batch
+                if (p.expiry.isNotEmpty()) entry.latestExpiry = p.expiry
             }
         }
         return map.values.map {
+            var isExpiringSoon = false
+            if (it.latestExpiry.isNotBlank()) {
+                try {
+                    val expDate = LocalDate.parse(it.latestExpiry)
+                    val daysUntil = ChronoUnit.DAYS.between(today, expDate)
+                    if (daysUntil in 0..60) {
+                        isExpiringSoon = true
+                    }
+                } catch (_: Exception) {}
+            }
+
             StockItem(
                 name = it.name,
                 company = it.company,
@@ -371,7 +442,12 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 sale = it.sale,
                 purchaseValue = it.qty * it.purchase,
                 saleValue = it.qty * it.sale,
-                isLowStock = it.qty <= 5
+                isLowStock = it.qty <= threshold,
+                isOutOfStock = it.qty <= 0,
+                isCritical = it.qty in 1..2,
+                isExpiringSoon = isExpiringSoon,
+                expiryDate = it.latestExpiry,
+                batchNumber = it.latestBatch
             )
         }.sortedBy { it.name }
     }
@@ -381,22 +457,24 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         var company: String,
         var qty: Int,
         var purchase: Double,
-        var sale: Double
+        var sale: Double,
+        var latestBatch: String = "",
+        var latestExpiry: String = ""
     )
 
-    private fun calculateAlerts(purchases: List<Purchase>): List<InventoryAlert> {
+    private fun calculateAlerts(purchases: List<Purchase>, threshold: Int): List<InventoryAlert> {
         val list = mutableListOf<InventoryAlert>()
         val today = LocalDate.now()
 
         // Low stock alerts
-        val stock = calculateStock(purchases)
+        val stock = calculateStock(purchases, threshold)
         stock.filter { it.isLowStock }.forEach { item ->
             list.add(
                 InventoryAlert(
                     name = item.name,
-                    text = "only ${item.qty} unit(s) in stock",
+                    text = if (item.isOutOfStock) "OUT OF STOCK (0 units)" else "only ${item.qty} unit(s) in stock",
                     type = "stock",
-                    icon = "⚠️",
+                    icon = if (item.isOutOfStock) "⛔" else "⚠️",
                     isCritical = item.qty <= 2
                 )
             )
